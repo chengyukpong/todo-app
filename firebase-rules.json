@@ -1,0 +1,27 @@
+{
+  "rules": {
+    "todos": {
+      ".read": true,
+      ".write": true,
+      "$todo_id": {
+        ".validate": "newData.hasChildren(['text', 'done', 'createdAt'])",
+        "text": {
+          ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 500"
+        },
+        "done": {
+          ".validate": "newData.isBoolean()"
+        },
+        "createdAt": {
+          ".validate": "newData.isString()"
+        },
+        "$other": {
+          ".validate": false
+        }
+      }
+    },
+    "$other": {
+      ".read": false,
+      ".write": false
+    }
+  }
+}
