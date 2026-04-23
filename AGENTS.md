@@ -32,25 +32,32 @@ todo-app/
 
 ### Data Schema
 
-```json
-{
-  "todos": {
-    "<auto-id>": {
-      "text": "Buy groceries",
-      "done": false,
-      "createdAt": "2026-04-23T08:43:06.887Z"
-    }
-  }
-}
 ```
+users/
+  <uid>/
+    todos/
+      <auto-id>/
+        text: "Buy groceries"
+        done: false
+        createdAt: "2026-04-23T08:43:06.887Z"
+```
+
+Each user's data is isolated under their Firebase Auth UID.
 
 ### Security Rules
 
 See `firebase-rules.json`. Current rules:
-- Read/write allowed on `/todos` only
+- Each user can only read/write their own data under `/users/{uid}`
+- Requires Firebase Auth (`auth != null && auth.uid == $uid`)
 - Each todo must have `text` (string, 1-500 chars), `done` (boolean), `createdAt` (string)
 - No extra fields allowed
 - All other paths denied
+
+### Auth
+
+- **Provider:** Google Sign-In
+- **Flow:** popup-based, no redirect
+- **Session:** Firebase handles persistence automatically
 
 ## How to Develop
 
@@ -81,10 +88,10 @@ firebase@10.12.0 (app+db)    — realtime database
 - Modify the `createTheme()` call in the React code
 - Gradient background is in the `<style>` block
 
-### Add Firebase Auth
-- Add `firebase-auth-compat.js` CDN script
-- Update rules to require `auth != null`
-- Add login UI (Google sign-in recommended)
+### Add more auth providers
+- Add provider (e.g., `new firebase.auth.GithubAuthProvider()`)
+- Add sign-in button in `LoginScreen`
+- Enable provider in Firebase Console → Authentication → Sign-in method
 
 ## Gotchas
 

@@ -14,6 +14,7 @@
   <!-- Firebase -->
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
@@ -39,14 +40,15 @@
     };
     firebase.initializeApp(firebaseConfig);
     const db = firebase.database();
-    const todosRef = db.ref('todos');
+    const auth = firebase.auth();
+    const googleProvider = new firebase.auth.GoogleAuthProvider();
 
     const {
       ThemeProvider, createTheme, CssBaseline,
       Container, Paper, Typography, TextField, IconButton,
       Checkbox, List, ListItem, ListItemButton, ListItemIcon, ListItemText,
       Chip, Box, Fade, Collapse, Divider, Tooltip, InputAdornment,
-      CircularProgress
+      CircularProgress, Button, Avatar
     } = MaterialUI;
 
     const { useState, useEffect, useRef } = React;
@@ -75,15 +77,85 @@
       },
     });
 
-    function App() {
+    /* ─── Login Screen ─── */
+    function LoginScreen() {
+      const [loading, setLoading] = useState(false);
+
+      const signIn = async () => {
+        setLoading(true);
+        try {
+          await auth.signInWithPopup(googleProvider);
+        } catch (err) {
+          console.error(err);
+          setLoading(false);
+        }
+      };
+
+      return (
+        <Container maxWidth="xs" sx={{ py: 10 }}>
+          <Fade in timeout={800}>
+            <Box sx={{ textAlign: 'center' }}>
+              <Typography variant="h3" fontWeight={700} sx={{
+                background: 'linear-gradient(135deg, #7c4dff, #ff4081)',
+                WebkitBackgroundClip: 'text',
+                WebkitTextFillColor: 'transparent',
+                mb: 1,
+              }}>
+                ✦ Todo
+              </Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 5 }}>
+                Sign in to sync your tasks across devices
+              </Typography>
+
+              <Paper elevation={6} sx={{ p: 4 }}>
+                <Button
+                  onClick={signIn}
+                  disabled={loading}
+                  fullWidth
+                  variant="outlined"
+                  size="large"
+                  startIcon={loading ? <CircularProgress size={20} /> : (
+                    <svg width="20" height="20" viewBox="0 0 48 48">
+                      <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>
+                      <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/>
+                      <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/>
+                      <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/>
+                    </svg>
+                  )}
+                  sx={{
+                    py: 1.5,
+                    borderColor: 'rgba(255,255,255,0.2)',
+                    color: '#fff',
+                    fontWeight: 600,
+                    textTransform: 'none',
+                    fontSize: '1rem',
+                    '&:hover': { borderColor: 'rgba(255,255,255,0.4)' },
+                  }}
+                >
+                  {loading ? 'Signing in...' : 'Sign in with Google'}
+                </Button>
+
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 3 }}>
+                  Your data is stored securely in your own Firebase account
+                </Typography>
+              </Paper>
+            </Box>
+          </Fade>
+        </Container>
+      );
+    }
+
+    /* ─── Todo App ─── */
+    function TodoApp({ user }) {
       const [todos, setTodos] = useState([]);
       const [input, setInput] = useState('');
       const [filter, setFilter] = useState('all');
       const [loading, setLoading] = useState(true);
-      const [synced, setSynced] = useState(false);
       const inputRef = useRef(null);
 
-      // Listen to Firebase in real-time
+      // Per-user data path
+      const todosRef = db.ref(`users/${user.uid}/todos`);
+
       useEffect(() => {
         const listener = todosRef.orderByChild('createdAt').on('value', (snap) => {
           const val = snap.val();
@@ -95,7 +167,6 @@
             setTodos([]);
           }
           setLoading(false);
-          setSynced(true);
         });
         return () => todosRef.off('value', listener);
       }, []);
@@ -103,8 +174,7 @@
       const addTodo = () => {
         const text = input.trim();
         if (!text) return;
-        const newRef = todosRef.push();
-        newRef.set({
+        todosRef.push().set({
           text,
           done: false,
           createdAt: new Date().toISOString(),
@@ -115,13 +185,11 @@
 
       const toggleTodo = (id) => {
         const todo = todos.find(t => t.id === id);
-        if (todo) {
-          db.ref(`todos/${id}/done`).set(!todo.done);
-        }
+        if (todo) db.ref(`users/${user.uid}/todos/${id}/done`).set(!todo.done);
       };
 
       const deleteTodo = (id) => {
-        db.ref(`todos/${id}`).remove();
+        db.ref(`users/${user.uid}/todos/${id}`).remove();
       };
 
       const clearCompleted = () => {
@@ -139,183 +207,200 @@
       const activeCount = todos.filter(t => !t.done).length;
       const doneCount = todos.filter(t => t.done).length;
 
-      const handleKeyDown = (e) => {
-        if (e.key === 'Enter') addTodo();
-      };
+      return (
+        <Container maxWidth="sm" sx={{ py: 6 }}>
+          <Fade in timeout={800}>
+            <Box>
+              {/* Header + User */}
+              <Box sx={{ textAlign: 'center', mb: 4 }}>
+                <Typography variant="h3" fontWeight={700} sx={{
+                  background: 'linear-gradient(135deg, #7c4dff, #ff4081)',
+                  WebkitBackgroundClip: 'text',
+                  WebkitTextFillColor: 'transparent',
+                }}>
+                  ✦ Todo
+                </Typography>
+                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 1, mt: 1 }}>
+                  <Avatar src={user.photoURL} sx={{ width: 24, height: 24 }} />
+                  <Typography variant="body2" color="text.secondary">
+                    {user.displayName || user.email}
+                  </Typography>
+                  <Chip
+                    label="Sign out"
+                    size="small"
+                    onClick={() => auth.signOut()}
+                    sx={{ ml: 1, fontSize: '0.7rem', height: 22, cursor: 'pointer' }}
+                  />
+                </Box>
+                <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: 'block' }}>
+                  {loading ? 'Syncing...' : `${activeCount} remaining · ${doneCount} completed`}
+                </Typography>
+              </Box>
+
+              {/* Input */}
+              <Paper elevation={6} sx={{ p: 1, mb: 3, display: 'flex', alignItems: 'center' }}>
+                <TextField
+                  fullWidth
+                  placeholder="What needs to be done?"
+                  value={input}
+                  onChange={e => setInput(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && addTodo()}
+                  inputRef={inputRef}
+                  variant="standard"
+                  InputProps={{
+                    disableUnderline: true,
+                    sx: { px: 2, py: 1.5, fontSize: '1.05rem' },
+                    endAdornment: (
+                      <InputAdornment position="end">
+                        <Tooltip title="Add task">
+                          <span>
+                            <IconButton
+                              onClick={addTodo}
+                              disabled={!input.trim()}
+                              sx={{
+                                background: input.trim() ? 'linear-gradient(135deg, #7c4dff, #ff4081)' : 'transparent',
+                                color: '#fff',
+                                '&:hover': { opacity: 0.9 },
+                              }}
+                            >
+                              <span style={{ fontSize: '1.4rem', lineHeight: 1 }}>+</span>
+                            </IconButton>
+                          </span>
+                        </Tooltip>
+                      </InputAdornment>
+                    ),
+                  }}
+                />
+              </Paper>
+
+              {/* Filters */}
+              <Box sx={{ display: 'flex', justifyContent: 'center', gap: 1, mb: 2 }}>
+                {['all', 'active', 'done'].map(f => (
+                  <Chip
+                    key={f}
+                    label={f.charAt(0).toUpperCase() + f.slice(1)}
+                    onClick={() => setFilter(f)}
+                    variant={filter === f ? 'filled' : 'outlined'}
+                    color={filter === f ? 'primary' : 'default'}
+                    size="small"
+                    sx={{ fontWeight: 600 }}
+                  />
+                ))}
+                {doneCount > 0 && (
+                  <Chip
+                    label="Clear done"
+                    onClick={clearCompleted}
+                    color="secondary"
+                    variant="outlined"
+                    size="small"
+                    sx={{ ml: 'auto', fontWeight: 500 }}
+                  />
+                )}
+              </Box>
+
+              {/* List */}
+              <Paper elevation={6} sx={{ overflow: 'hidden' }}>
+                {loading ? (
+                  <Box sx={{ py: 8, textAlign: 'center' }}>
+                    <CircularProgress size={32} sx={{ color: '#7c4dff' }} />
+                    <Typography color="text.secondary" sx={{ mt: 2, fontSize: '0.9rem' }}>
+                      Loading your tasks...
+                    </Typography>
+                  </Box>
+                ) : filtered.length === 0 ? (
+                  <Box sx={{ py: 8, textAlign: 'center' }}>
+                    <Typography variant="h1" sx={{ opacity: 0.15, fontSize: '4rem' }}>✓</Typography>
+                    <Typography color="text.secondary" sx={{ mt: 1 }}>
+                      {todos.length === 0 ? 'Add your first task above' : 'Nothing here'}
+                    </Typography>
+                  </Box>
+                ) : (
+                  <List disablePadding>
+                    {filtered.map((todo, i) => (
+                      <Collapse key={todo.id} in timeout={400}>
+                        <ListItem
+                          disablePadding
+                          secondaryAction={
+                            <Tooltip title="Delete">
+                              <IconButton
+                                edge="end"
+                                onClick={() => deleteTodo(todo.id)}
+                                size="small"
+                                sx={{ mr: 1, opacity: 0.4, '&:hover': { opacity: 1, color: 'error.main' } }}
+                              >
+                                <span style={{ fontSize: '1.1rem' }}>✕</span>
+                              </IconButton>
+                            </Tooltip>
+                          }
+                        >
+                          <ListItemButton onClick={() => toggleTodo(todo.id)} dense sx={{ py: 1.5 }}>
+                            <ListItemIcon sx={{ minWidth: 44 }}>
+                              <Checkbox edge="start" checked={todo.done} tabIndex={-1} disableRipple color="primary" />
+                            </ListItemIcon>
+                            <ListItemText
+                              primary={todo.text}
+                              secondary={new Date(todo.createdAt).toLocaleDateString('en-US', {
+                                month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
+                              })}
+                              primaryTypographyProps={{
+                                sx: {
+                                  textDecoration: todo.done ? 'line-through' : 'none',
+                                  color: todo.done ? 'text.disabled' : 'text.primary',
+                                  fontWeight: 500,
+                                  fontSize: '0.95rem',
+                                  transition: 'all 0.3s',
+                                },
+                              }}
+                              secondaryTypographyProps={{
+                                sx: { fontSize: '0.75rem', opacity: 0.5, mt: 0.3 },
+                              }}
+                            />
+                          </ListItemButton>
+                          {i < filtered.length - 1 && <Divider component="li" sx={{ opacity: 0.06 }} />}
+                        </ListItem>
+                      </Collapse>
+                    ))}
+                  </List>
+                )}
+              </Paper>
+
+              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', textAlign: 'center', mt: 3, opacity: 0.5 }}>
+                🔒 Your tasks · Only you can see them
+              </Typography>
+            </Box>
+          </Fade>
+        </Container>
+      );
+    }
+
+    /* ─── Root ─── */
+    function App() {
+      const [user, setUser] = useState(null);
+      const [authLoading, setAuthLoading] = useState(true);
+
+      useEffect(() => {
+        const unsub = auth.onAuthStateChanged(u => {
+          setUser(u);
+          setAuthLoading(false);
+        });
+        return unsub;
+      }, []);
+
+      if (authLoading) {
+        return (
+          <ThemeProvider theme={theme}>
+            <CssBaseline />
+            <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh' }}>
+              <CircularProgress sx={{ color: '#7c4dff' }} />
+            </Box>
+          </ThemeProvider>
+        );
+      }
 
       return (
         <ThemeProvider theme={theme}>
           <CssBaseline />
-          <Container maxWidth="sm" sx={{ py: 6 }}>
-            <Fade in timeout={800}>
-              <Box>
-                {/* Header */}
-                <Box sx={{ textAlign: 'center', mb: 4 }}>
-                  <Typography variant="h3" fontWeight={700} sx={{
-                    background: 'linear-gradient(135deg, #7c4dff, #ff4081)',
-                    WebkitBackgroundClip: 'text',
-                    WebkitTextFillColor: 'transparent',
-                  }}>
-                    ✦ Todo
-                  </Typography>
-                  <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-                    {loading ? 'Syncing...' : `${activeCount} remaining · ${doneCount} completed`}
-                  </Typography>
-                  {synced && !loading && (
-                    <Chip
-                      label="☁️ Cloud synced"
-                      size="small"
-                      sx={{ mt: 1, fontSize: '0.7rem', bgcolor: 'rgba(124,77,255,0.15)', color: '#b388ff' }}
-                    />
-                  )}
-                </Box>
-
-                {/* Input */}
-                <Paper elevation={6} sx={{ p: 1, mb: 3, display: 'flex', alignItems: 'center' }}>
-                  <TextField
-                    fullWidth
-                    placeholder="What needs to be done?"
-                    value={input}
-                    onChange={e => setInput(e.target.value)}
-                    onKeyDown={handleKeyDown}
-                    inputRef={inputRef}
-                    variant="standard"
-                    InputProps={{
-                      disableUnderline: true,
-                      sx: { px: 2, py: 1.5, fontSize: '1.05rem' },
-                      endAdornment: (
-                        <InputAdornment position="end">
-                          <Tooltip title="Add task">
-                            <span>
-                              <IconButton
-                                onClick={addTodo}
-                                disabled={!input.trim()}
-                                sx={{
-                                  background: input.trim()
-                                    ? 'linear-gradient(135deg, #7c4dff, #ff4081)'
-                                    : 'transparent',
-                                  color: '#fff',
-                                  '&:hover': { opacity: 0.9 },
-                                }}
-                              >
-                                <span style={{ fontSize: '1.4rem', lineHeight: 1 }}>+</span>
-                              </IconButton>
-                            </span>
-                          </Tooltip>
-                        </InputAdornment>
-                      ),
-                    }}
-                  />
-                </Paper>
-
-                {/* Filters */}
-                <Box sx={{ display: 'flex', justifyContent: 'center', gap: 1, mb: 2 }}>
-                  {[
-                    { key: 'all', label: 'All' },
-                    { key: 'active', label: 'Active' },
-                    { key: 'done', label: 'Done' },
-                  ].map(f => (
-                    <Chip
-                      key={f.key}
-                      label={f.label}
-                      onClick={() => setFilter(f.key)}
-                      variant={filter === f.key ? 'filled' : 'outlined'}
-                      color={filter === f.key ? 'primary' : 'default'}
-                      size="small"
-                      sx={{ fontWeight: 600 }}
-                    />
-                  ))}
-                  {doneCount > 0 && (
-                    <Chip
-                      label="Clear done"
-                      onClick={clearCompleted}
-                      color="secondary"
-                      variant="outlined"
-                      size="small"
-                      sx={{ ml: 'auto', fontWeight: 500 }}
-                    />
-                  )}
-                </Box>
-
-                {/* List */}
-                <Paper elevation={6} sx={{ overflow: 'hidden' }}>
-                  {loading ? (
-                    <Box sx={{ py: 8, textAlign: 'center' }}>
-                      <CircularProgress size={32} sx={{ color: '#7c4dff' }} />
-                      <Typography color="text.secondary" sx={{ mt: 2, fontSize: '0.9rem' }}>
-                        Loading from cloud...
-                      </Typography>
-                    </Box>
-                  ) : filtered.length === 0 ? (
-                    <Box sx={{ py: 8, textAlign: 'center' }}>
-                      <Typography variant="h1" sx={{ opacity: 0.15, fontSize: '4rem' }}>✓</Typography>
-                      <Typography color="text.secondary" sx={{ mt: 1 }}>
-                        {todos.length === 0 ? 'Add your first task above' : 'Nothing here'}
-                      </Typography>
-                    </Box>
-                  ) : (
-                    <List disablePadding>
-                      {filtered.map((todo, i) => (
-                        <Collapse key={todo.id} in timeout={400}>
-                          <ListItem
-                            disablePadding
-                            secondaryAction={
-                              <Tooltip title="Delete">
-                                <IconButton
-                                  edge="end"
-                                  onClick={() => deleteTodo(todo.id)}
-                                  size="small"
-                                  sx={{ mr: 1, opacity: 0.4, '&:hover': { opacity: 1, color: 'error.main' } }}
-                                >
-                                  <span style={{ fontSize: '1.1rem' }}>✕</span>
-                                </IconButton>
-                              </Tooltip>
-                            }
-                          >
-                            <ListItemButton onClick={() => toggleTodo(todo.id)} dense sx={{ py: 1.5 }}>
-                              <ListItemIcon sx={{ minWidth: 44 }}>
-                                <Checkbox
-                                  edge="start"
-                                  checked={todo.done}
-                                  tabIndex={-1}
-                                  disableRipple
-                                  color="primary"
-                                />
-                              </ListItemIcon>
-                              <ListItemText
-                                primary={todo.text}
-                                secondary={new Date(todo.createdAt).toLocaleDateString('en-US', {
-                                  month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
-                                })}
-                                primaryTypographyProps={{
-                                  sx: {
-                                    textDecoration: todo.done ? 'line-through' : 'none',
-                                    color: todo.done ? 'text.disabled' : 'text.primary',
-                                    fontWeight: 500,
-                                    fontSize: '0.95rem',
-                                    transition: 'all 0.3s',
-                                  },
-                                }}
-                                secondaryTypographyProps={{
-                                  sx: { fontSize: '0.75rem', opacity: 0.5, mt: 0.3 },
-                                }}
-                              />
-                            </ListItemButton>
-                            {i < filtered.length - 1 && <Divider component="li" sx={{ opacity: 0.06 }} />}
-                          </ListItem>
-                        </Collapse>
-                      ))}
-                    </List>
-                  )}
-                </Paper>
-
-                {/* Footer */}
-                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', textAlign: 'center', mt: 3, opacity: 0.5 }}>
-                  Real-time sync via Firebase · All devices stay in sync
-                </Typography>
-              </Box>
-            </Fade>
-          </Container>
+          {user ? <TodoApp user={user} /> : <LoginScreen />}
         </ThemeProvider>
       );
     }
