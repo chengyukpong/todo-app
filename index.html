@@ -156,6 +156,34 @@
       // Per-user data path
       const todosRef = db.ref(`users/${user.uid}/todos`);
 
+      // One-time migration: move data from /todos → /users/{uid}/todos
+      useEffect(() => {
+        const oldRef = db.ref('todos');
+        const migrationKey = `migrated_${user.uid}`;
+
+        if (!localStorage.getItem(migrationKey)) {
+          oldRef.once('value').then(snap => {
+            const val = snap.val();
+            if (val) {
+              const updates = {};
+              Object.entries(val).forEach(([id, todo]) => {
+                updates[id] = todo;
+              });
+              todosRef.update(updates).then(() => {
+                oldRef.remove();
+                localStorage.setItem(migrationKey, '1');
+                console.log('Migrated old todos to your account');
+              });
+            } else {
+              localStorage.setItem(migrationKey, '1');
+            }
+          }).catch(() => {
+            // Old path doesn't exist or no permission, skip
+            localStorage.setItem(migrationKey, '1');
+          });
+        }
+      }, []);
+
       useEffect(() => {
         const listener = todosRef.orderByChild('createdAt').on('value', (snap) => {
           const val = snap.val();
