@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Todo List</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://unpkg.com/@mui/material@5/umd/material-ui.production.min.js" crossorigin></script>
+  <!-- Firebase -->
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'Inter', sans-serif;
+      background: linear-gradient(135deg, #0f0c29, #302b63, #24243e);
+      min-height: 100vh;
+    }
+    #root { min-height: 100vh; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+    // Firebase init
+    const firebaseConfig = {
+      apiKey: "AIzaSyC3SLPSUkwB4KCmhSXVgMUB0V4da90ZdCY",
+      authDomain: "todo-app-5dad1.firebaseapp.com",
+      databaseURL: "https://todo-app-5dad1-default-rtdb.asia-southeast1.firebasedatabase.app",
+      projectId: "todo-app-5dad1",
+      storageBucket: "todo-app-5dad1.firebasestorage.app",
+      messagingSenderId: "792516696733",
+      appId: "1:792516696733:web:89548398292df5462d9274"
+    };
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.database();
+    const todosRef = db.ref('todos');
+
+    const {
+      ThemeProvider, createTheme, CssBaseline,
+      Container, Paper, Typography, TextField, IconButton,
+      Checkbox, List, ListItem, ListItemButton, ListItemIcon, ListItemText,
+      Chip, Box, Fade, Collapse, Divider, Tooltip, InputAdornment,
+      CircularProgress
+    } = MaterialUI;
+
+    const { useState, useEffect, useRef } = React;
+
+    const theme = createTheme({
+      palette: {
+        mode: 'dark',
+        primary: { main: '#7c4dff' },
+        secondary: { main: '#ff4081' },
+        background: {
+          default: 'transparent',
+          paper: 'rgba(30, 30, 60, 0.85)',
+        },
+      },
+      typography: { fontFamily: '"Inter", sans-serif' },
+      shape: { borderRadius: 16 },
+      components: {
+        MuiPaper: {
+          styleOverrides: {
+            root: {
+              backdropFilter: 'blur(20px)',
+              border: '1px solid rgba(255,255,255,0.08)',
+            },
+          },
+        },
+      },
+    });
+
+    function App() {
+      const [todos, setTodos] = useState([]);
+      const [input, setInput] = useState('');
+      const [filter, setFilter] = useState('all');
+      const [loading, setLoading] = useState(true);
+      const [synced, setSynced] = useState(false);
+      const inputRef = useRef(null);
+
+      // Listen to Firebase in real-time
+      useEffect(() => {
+        const listener = todosRef.orderByChild('createdAt').on('value', (snap) => {
+          const val = snap.val();
+          if (val) {
+            const list = Object.entries(val).map(([id, t]) => ({ id, ...t }));
+            list.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+            setTodos(list);
+          } else {
+            setTodos([]);
+          }
+          setLoading(false);
+          setSynced(true);
+        });
+        return () => todosRef.off('value', listener);
+      }, []);
+
+      const addTodo = () => {
+        const text = input.trim();
+        if (!text) return;
+        const newRef = todosRef.push();
+        newRef.set({
+          text,
+          done: false,
+          createdAt: new Date().toISOString(),
+        });
+        setInput('');
+        inputRef.current?.focus();
+      };
+
+      const toggleTodo = (id) => {
+        const todo = todos.find(t => t.id === id);
+        if (todo) {
+          db.ref(`todos/${id}/done`).set(!todo.done);
+        }
+      };
+
+      const deleteTodo = (id) => {
+        db.ref(`todos/${id}`).remove();
+      };
+
+      const clearCompleted = () => {
+        const updates = {};
+        todos.filter(t => t.done).forEach(t => { updates[t.id] = null; });
+        todosRef.update(updates);
+      };
+
+      const filtered = todos.filter(t => {
+        if (filter === 'active') return !t.done;
+        if (filter === 'done') return t.done;
+        return true;
+      });
+
+      const activeCount = todos.filter(t => !t.done).length;
+      const doneCount = todos.filter(t => t.done).length;
+
+      const handleKeyDown = (e) => {
+        if (e.key === 'Enter') addTodo();
+      };
+
+      return (
+        <ThemeProvider theme={theme}>
+          <CssBaseline />
+          <Container maxWidth="sm" sx={{ py: 6 }}>
+            <Fade in timeout={800}>
+              <Box>
+                {/* Header */}
+                <Box sx={{ textAlign: 'center', mb: 4 }}>
+                  <Typography variant="h3" fontWeight={700} sx={{
+                    background: 'linear-gradient(135deg, #7c4dff, #ff4081)',
+                    WebkitBackgroundClip: 'text',
+                    WebkitTextFillColor: 'transparent',
+                  }}>
+                    ✦ Todo
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+                    {loading ? 'Syncing...' : `${activeCount} remaining · ${doneCount} completed`}
+                  </Typography>
+                  {synced && !loading && (
+                    <Chip
+                      label="☁️ Cloud synced"
+                      size="small"
+                      sx={{ mt: 1, fontSize: '0.7rem', bgcolor: 'rgba(124,77,255,0.15)', color: '#b388ff' }}
+                    />
+                  )}
+                </Box>
+
+                {/* Input */}
+                <Paper elevation={6} sx={{ p: 1, mb: 3, display: 'flex', alignItems: 'center' }}>
+                  <TextField
+                    fullWidth
+                    placeholder="What needs to be done?"
+                    value={input}
+                    onChange={e => setInput(e.target.value)}
+                    onKeyDown={handleKeyDown}
+                    inputRef={inputRef}
+                    variant="standard"
+                    InputProps={{
+                      disableUnderline: true,
+                      sx: { px: 2, py: 1.5, fontSize: '1.05rem' },
+                      endAdornment: (
+                        <InputAdornment position="end">
+                          <Tooltip title="Add task">
+                            <span>
+                              <IconButton
+                                onClick={addTodo}
+                                disabled={!input.trim()}
+                                sx={{
+                                  background: input.trim()
+                                    ? 'linear-gradient(135deg, #7c4dff, #ff4081)'
+                                    : 'transparent',
+                                  color: '#fff',
+                                  '&:hover': { opacity: 0.9 },
+                                }}
+                              >
+                                <span style={{ fontSize: '1.4rem', lineHeight: 1 }}>+</span>
+                              </IconButton>
+                            </span>
+                          </Tooltip>
+                        </InputAdornment>
+                      ),
+                    }}
+                  />
+                </Paper>
+
+                {/* Filters */}
+                <Box sx={{ display: 'flex', justifyContent: 'center', gap: 1, mb: 2 }}>
+                  {[
+                    { key: 'all', label: 'All' },
+                    { key: 'active', label: 'Active' },
+                    { key: 'done', label: 'Done' },
+                  ].map(f => (
+                    <Chip
+                      key={f.key}
+                      label={f.label}
+                      onClick={() => setFilter(f.key)}
+                      variant={filter === f.key ? 'filled' : 'outlined'}
+                      color={filter === f.key ? 'primary' : 'default'}
+                      size="small"
+                      sx={{ fontWeight: 600 }}
+                    />
+                  ))}
+                  {doneCount > 0 && (
+                    <Chip
+                      label="Clear done"
+                      onClick={clearCompleted}
+                      color="secondary"
+                      variant="outlined"
+                      size="small"
+                      sx={{ ml: 'auto', fontWeight: 500 }}
+                    />
+                  )}
+                </Box>
+
+                {/* List */}
+                <Paper elevation={6} sx={{ overflow: 'hidden' }}>
+                  {loading ? (
+                    <Box sx={{ py: 8, textAlign: 'center' }}>
+                      <CircularProgress size={32} sx={{ color: '#7c4dff' }} />
+                      <Typography color="text.secondary" sx={{ mt: 2, fontSize: '0.9rem' }}>
+                        Loading from cloud...
+                      </Typography>
+                    </Box>
+                  ) : filtered.length === 0 ? (
+                    <Box sx={{ py: 8, textAlign: 'center' }}>
+                      <Typography variant="h1" sx={{ opacity: 0.15, fontSize: '4rem' }}>✓</Typography>
+                      <Typography color="text.secondary" sx={{ mt: 1 }}>
+                        {todos.length === 0 ? 'Add your first task above' : 'Nothing here'}
+                      </Typography>
+                    </Box>
+                  ) : (
+                    <List disablePadding>
+                      {filtered.map((todo, i) => (
+                        <Collapse key={todo.id} in timeout={400}>
+                          <ListItem
+                            disablePadding
+                            secondaryAction={
+                              <Tooltip title="Delete">
+                                <IconButton
+                                  edge="end"
+                                  onClick={() => deleteTodo(todo.id)}
+                                  size="small"
+                                  sx={{ mr: 1, opacity: 0.4, '&:hover': { opacity: 1, color: 'error.main' } }}
+                                >
+                                  <span style={{ fontSize: '1.1rem' }}>✕</span>
+                                </IconButton>
+                              </Tooltip>
+                            }
+                          >
+                            <ListItemButton onClick={() => toggleTodo(todo.id)} dense sx={{ py: 1.5 }}>
+                              <ListItemIcon sx={{ minWidth: 44 }}>
+                                <Checkbox
+                                  edge="start"
+                                  checked={todo.done}
+                                  tabIndex={-1}
+                                  disableRipple
+                                  color="primary"
+                                />
+                              </ListItemIcon>
+                              <ListItemText
+                                primary={todo.text}
+                                secondary={new Date(todo.createdAt).toLocaleDateString('en-US', {
+                                  month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
+                                })}
+                                primaryTypographyProps={{
+                                  sx: {
+                                    textDecoration: todo.done ? 'line-through' : 'none',
+                                    color: todo.done ? 'text.disabled' : 'text.primary',
+                                    fontWeight: 500,
+                                    fontSize: '0.95rem',
+                                    transition: 'all 0.3s',
+                                  },
+                                }}
+                                secondaryTypographyProps={{
+                                  sx: { fontSize: '0.75rem', opacity: 0.5, mt: 0.3 },
+                                }}
+                              />
+                            </ListItemButton>
+                            {i < filtered.length - 1 && <Divider component="li" sx={{ opacity: 0.06 }} />}
+                          </ListItem>
+                        </Collapse>
+                      ))}
+                    </List>
+                  )}
+                </Paper>
+
+                {/* Footer */}
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', textAlign: 'center', mt: 3, opacity: 0.5 }}>
+                  Real-time sync via Firebase · All devices stay in sync
+                </Typography>
+              </Box>
+            </Fade>
+          </Container>
+        </ThemeProvider>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  </script>
+</body>
+</html>
